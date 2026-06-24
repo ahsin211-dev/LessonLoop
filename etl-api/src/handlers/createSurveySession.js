@@ -7,7 +7,7 @@ const { withHandler } = require('../lib/handler');
 const { createSession } = require('../repositories/survey');
 
 exports.handler = withHandler(async (event) => {
-  const user = requireAuth(event);
+  const user = await requireAuth(event);
   const body = parseBody(event);
   const {
     lessonId,

@@ -10,7 +10,7 @@ exports.handler = withHandler(async (event) => {
   const session = await getSession(sessionId);
   if (!session) return notFound('Session not found');
 
-  requireSessionOwner(event, session);
+  await requireSessionOwner(event, session);
 
   const participation = await getParticipationStats(sessionId);
   const report = await getReport(sessionId);

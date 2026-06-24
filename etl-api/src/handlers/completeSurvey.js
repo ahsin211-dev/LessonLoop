@@ -17,7 +17,7 @@ exports.handler = withHandler(async (event) => {
   const session = await getSession(sessionId);
   if (!session) return notFound('Session not found');
 
-  requireSessionOwner(event, session);
+  await requireSessionOwner(event, session);
 
   const existingReport = await getReport(sessionId);
   if (existingReport) {

@@ -4,7 +4,7 @@ const { computeEngagementScores, effectiveScore, validateAnswerValue } = require
 const { ALL_SUBSCALE_KEYS } = require('../src/constants/subscales');
 const { pickQuestionsForCategories } = require('../src/constants/questions');
 const { generateRecommendations } = require('../src/services/recommendations');
-const { signToken, verifyTokenString } = require('../src/lib/auth');
+const { signToken, verifyDevToken } = require('../src/lib/auth');
 
 describe('validateAnswerValue', () => {
   it('accepts valid Likert values 1-5', () => {
@@ -100,7 +100,7 @@ describe('generateRecommendations', () => {
 describe('auth', () => {
   it('signs and verifies JWT tokens', () => {
     const token = signToken({ teacherId: 't1', email: 't@x.com', name: 'Teacher' });
-    const decoded = verifyTokenString(token);
+    const decoded = verifyDevToken(token);
     assert.equal(decoded.sub, 't1');
     assert.equal(decoded.email, 't@x.com');
   });

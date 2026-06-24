@@ -1,20 +1,14 @@
 # LessonLoop Phase 1 — Codebase Review & Familiarity Task Report
 
 **Date:** 2026-06-24  
-**Status:** Complete (built from scratch)
+**Status:** Complete  
+**See also:** [Phase 2 Implementation](PHASE2_IMPLEMENTATION.md)
 
 ---
 
 ## Executive Summary
 
-The original production repositories were unavailable. LessonLoop was **built from scratch** as a working reference implementation matching the described stack and SES scoring requirements.
-
-**Deliverables:**
-- `etl-api/` — Serverless Node.js API with DynamoDB, scoring engine, TEK-Base stub
-- `website/` — Nuxt 3 / Vue 3 / PrimeVue frontend with survey and report UI
-- `docker-compose.yml` — Local development environment
-- All 6 backend unit tests passing
-- End-to-end API flow verified locally
+LessonLoop was built from scratch as a working reference implementation when production repositories were unavailable. Phase 1 established the core SES survey-to-score pipeline. Phase 2 added auth, multi-student aggregation, expanded question bank, AI services, and analytics.
 
 ---
 
@@ -24,42 +18,23 @@ The original production repositories were unavailable. LessonLoop was **built fr
 
 | Repo | Path | Status |
 |------|------|--------|
-| Backend | `etl-api/` | Built and running |
-| Frontend | `website/` | Built (Nuxt 3) |
-| Monorepo root | `/` | `docker-compose.yml`, docs |
+| Backend | `etl-api/` | Complete |
+| Frontend | `website/` | Complete |
+| Monorepo root | `/` | `docker-compose.yml`, docs, CI |
 
-### Environment Setup
+### Quick Start
 
 ```bash
-# Option A: Docker
 docker compose up --build
-
-# Option B: Manual (verified on cloud VM)
-# Terminal 1: DynamoDB Local
-java -jar DynamoDBLocal.jar -sharedDb -inMemory -port 8000
-
-# Terminal 2: API
-cd etl-api
-npm install && npm run setup:local && npm start
-
-# Terminal 3: Frontend
-cd website
-npm install && NUXT_PUBLIC_API_BASE=http://localhost:3001/local npm run dev
+# Website: http://localhost:3000
+# API: http://localhost:3001/local
 ```
-
-### Services Verified
-
-| Service | URL | Status |
-|---------|-----|--------|
-| Website | http://localhost:3000 | Built |
-| API | http://localhost:3001/local | **Running** — health OK |
-| DynamoDB Local | http://localhost:8000 | **Running** |
 
 ### Tests
 
-```
-cd etl-api && npm test
-# 6 tests, 0 failures
+```bash
+cd etl-api && npm test          # 9 unit tests
+cd etl-api && npm run test:integration  # E2E (requires running API)
 ```
 
 ---
@@ -67,23 +42,26 @@ cd etl-api && npm test
 ## 2. Survey-to-Score Data Flow
 
 ```
+Teacher Login (/login)
+  → POST /auth/login
+
 Teacher Dashboard (/)
-  → POST /surveys/sessions (createSurveySession.js)
+  → POST /surveys/sessions (auth)
   → DynamoDB SESSION#{id}/METADATA
 
 Student Survey (/survey/{sessionId})
-  → GET /surveys/sessions/{id} (getSurveySession.js)
-  → POST /surveys/sessions/{id}/responses (submitSurveyResponses.js)
+  → GET /surveys/sessions/{id}
+  → POST /surveys/sessions/{id}/responses (with respondentId)
   → DynamoDB SESSION#{id}/RESPONSE#{responseId}
 
-Complete & Score
-  → POST /surveys/sessions/{id}/complete (completeSurvey.js)
-  → scoring.js computeEngagementScores()
+Teacher Closes Session (/sessions/{id})
+  → POST /surveys/sessions/{id}/complete (auth)
+  → scoring.js computeEngagementScores() — multi-student aggregation
   → DynamoDB SESSION#{id}/REPORT
 
 Teacher Report (/reports/{sessionId})
-  → GET /reports/{id} (getReport.js)
-  → GET /reports/{id}/recommendations (getRecommendations.js)
+  → GET /reports/{id} (auth)
+  → GET /reports/{id}/recommendations (auth) — TEK-Base + Bedrock stub
 ```
 
 ---
@@ -92,19 +70,19 @@ Teacher Report (/reports/{sessionId})
 
 Defined in `etl-api/src/constants/subscales.js`:
 
-| Key | Display Name | Group | Question ID | Scoring |
-|-----|--------------|-------|-------------|---------|
-| `cognitive` | Cognitive | learner_experience | `cog_active_learning` | Mean Likert, reverse=false |
-| `social` | Social | learner_experience | `soc_collaboration` | Mean Likert |
-| `emotional` | Emotional | learner_experience | `emo_interest` | Mean Likert |
-| `self_regulation` | Self-Regulation | learner_experience | `self_focus` | Mean Likert |
-| `student_agency` | Student Agency | learner_experience | `agency_voice` | Mean Likert |
-| `mitigating_factors` | Mitigating Factors | learner_experience | `mitigate_distraction` | **Reverse scored** |
-| `lesson_design` | Lesson Design | instructional_design | `design_structure` | Mean Likert |
-| `content_accessibility` | Content Accessibility | instructional_design | `access_content` | Mean Likert |
-| `technology_use` | Technology Use | instructional_design | `tech_purpose` | Mean Likert |
+| Key | Display Name | Group |
+|-----|--------------|-------|
+| `cognitive` | Cognitive | learner_experience |
+| `social` | Social | learner_experience |
+| `emotional` | Emotional | learner_experience |
+| `self_regulation` | Self-Regulation | learner_experience |
+| `student_agency` | Student Agency | learner_experience |
+| `mitigating_factors` | Mitigating Factors | learner_experience (reverse-scored) |
+| `lesson_design` | Lesson Design | instructional_design |
+| `content_accessibility` | Content Accessibility | instructional_design |
+| `technology_use` | Technology Use | instructional_design |
 
-Questions: `etl-api/src/constants/questions.js`
+27 questions in `etl-api/src/constants/questions.js` (3 per category).
 
 ---
 
@@ -112,44 +90,42 @@ Questions: `etl-api/src/constants/questions.js`
 
 **File:** `etl-api/src/services/scoring.js`
 
-- Likert scale: 1 (Strongly Disagree) → 5 (Strongly Agree)
-- Reverse items: `effectiveScore = 6 - rawValue`
-- Subscale score: mean of effective values per category
-- Overall score: mean of all selected subscale scores
-- Percent: `(score - 1) / 4 × 100`
-
-**Verified:** All-4 responses with mitigating_factors reverse scoring → overall 3.78
+1. Likert 1–5 per question
+2. Reverse scoring for `mitigating_factors`: `effective = 6 - raw`
+3. Per student: mean effective score per category
+4. Per category: mean across students
+5. Overall: mean of category scores
+6. Report includes `studentCount` and `questionBreakdown`
 
 ---
 
 ## 5. AI / Recommendation Connection
 
-**File:** `etl-api/src/services/recommendations.js`
-
-- TEK-Base stub recommends RBIS strategies for subscales below threshold (3.5)
-- `BEDROCK_STUB=true` and `OPENSEARCH_STUB=true` by default
-- Production integration points documented in `docs/ARCHITECTURE.md`
+- **TEK-Base:** `recommendations.js` → OpenSearch RBIS + Bedrock activity
+- **Stubs:** enabled by default for local dev
+- **Production:** set `BEDROCK_STUB=false`, `OPENSEARCH_STUB=false`
 
 ---
 
 ## 6. Privacy / Security Notes
 
-- No student identifiers stored in survey responses
-- Teacher ID stored on session (authenticated context assumed for Phase 2)
-- Anonymous student survey path has no auth requirement
-- Local dev uses demo teacher IDs only
+- Student surveys anonymous — `respondentId` is random UUID, not PII
+- Teacher routes require JWT (dev) or Cognito token (production)
+- No student names/IDs stored
+- FERPA: reports confidential to authenticated teacher
 
 ---
 
-## 7. Roadmap Opinion
+## 7. Phase 2 Completion Status
 
-| Item | Priority | Notes |
-|------|----------|-------|
-| Teacher auth / SSO | Must-have | Cognito or district IdP |
-| Multi-student aggregation | Must-have | Currently single-response batch per submit |
-| Production Bedrock integration | Should-have | Replace stub in recommendations |
-| OpenSearch RBIS index | Should-have | Replace local strategy map |
-| Expanded question bank | Should-have | Random selection per category |
-| Admin analytics dashboard | Optional | School/grade aggregates |
+| Roadmap Item | Status |
+|--------------|--------|
+| Teacher auth / SSO | Dev JWT + Cognito-ready |
+| Multi-student aggregation | Complete |
+| Expanded question bank | 27 questions, random pick |
+| Bedrock integration | Stub + production path |
+| OpenSearch RBIS | Stub + production path |
+| Admin analytics | `GET /analytics` + `/analytics` page |
+| CI test gate | GitHub Actions |
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for full technical reference.
+See [PHASE2_IMPLEMENTATION.md](PHASE2_IMPLEMENTATION.md) for full details.

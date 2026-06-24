@@ -1,3 +1,27 @@
+export interface TeacherAnalytics {
+  teacherId: string
+  sessionCount: number
+  reportCount: number
+  totalStudents: number
+  averageOverallScore: number | null
+  subscaleAggregates: Array<{
+    categoryKey: string
+    displayName: string
+    group?: string
+    averageScore: number | null
+    sessionCount: number
+  }>
+  recentSessions: Array<{
+    sessionId: string
+    lessonTitle: string
+    lessonId: string
+    overallScore: number
+    studentCount: number
+    scoredAt: string
+  }>
+  computedAt: string
+}
+
 export interface SubscaleScore {
   categoryKey: string
   displayName: string

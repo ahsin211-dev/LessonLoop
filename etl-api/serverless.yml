@@ -19,6 +19,8 @@ provider:
     BEDROCK_MODEL_ID: ${env:BEDROCK_MODEL_ID, 'anthropic.claude-3-5-sonnet-20241022-v2:0'}
     JWT_SECRET: ${env:JWT_SECRET, 'lessonloop-dev-secret-change-in-production'}
     AUTH_DEV_MODE: ${env:AUTH_DEV_MODE, 'true'}
+    COGNITO_USER_POOL_ID: ${env:COGNITO_USER_POOL_ID, ''}
+    COGNITO_CLIENT_ID: ${env:COGNITO_CLIENT_ID, ''}
   iam:
     role:
       statements:
@@ -138,6 +140,14 @@ functions:
     events:
       - http:
           path: reports/{sessionId}/recommendations
+          method: get
+          cors: true
+
+  getAnalytics:
+    handler: src/handlers/getAnalytics.handler
+    events:
+      - http:
+          path: analytics
           method: get
           cors: true
 

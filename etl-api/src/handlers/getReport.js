@@ -10,7 +10,7 @@ exports.handler = withHandler(async (event) => {
   const session = await getSession(sessionId);
   if (!session) return notFound('Report not found');
 
-  requireSessionOwner(event, session);
+  await requireSessionOwner(event, session);
 
   const report = await getReport(sessionId);
   if (!report) return notFound('Report not found. Complete the survey first.');

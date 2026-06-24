@@ -155,3 +155,4 @@ cd etl-api && npm test   # 9 tests
 
 - [Architecture & Scoring Guide](docs/ARCHITECTURE.md)
 - [Phase 1 Codebase Review](docs/PHASE1_CODEBASE_REVIEW.md)
+- [Phase 2 Implementation](docs/PHASE2_IMPLEMENTATION.md)

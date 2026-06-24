@@ -8,6 +8,7 @@
       <nav>
         <template v-if="isAuthenticated">
           <NuxtLink to="/">Dashboard</NuxtLink>
+          <NuxtLink to="/analytics">Analytics</NuxtLink>
           <span class="user-name">{{ teacher?.name }}</span>
           <Button label="Sign Out" text size="small" @click="logout" />
         </template>

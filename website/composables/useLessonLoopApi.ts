@@ -88,5 +88,8 @@ export function useLessonLoopApi() {
         {},
         true,
       ),
+
+    getAnalytics: () =>
+      api<import('~/types/survey').TeacherAnalytics>('/analytics', {}, true),
   }
 }

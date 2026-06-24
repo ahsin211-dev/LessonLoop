@@ -1,0 +1,25 @@
+{
+  "name": "lessonloop-etl-api",
+  "version": "1.0.0",
+  "description": "LessonLoop backend API — Student Engagement Survey scoring and reports",
+  "private": true,
+  "scripts": {
+    "start": "serverless offline start --stage local",
+    "deploy": "serverless deploy",
+    "test": "node --test test/**/*.test.js",
+    "seed": "node scripts/seed-local.js",
+    "setup:local": "node scripts/setup-local-tables.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.700.0",
+    "@aws-sdk/lib-dynamodb": "^3.700.0",
+    "uuid": "^11.0.3"
+  },
+  "devDependencies": {
+    "serverless": "^3.39.0",
+    "serverless-offline": "^13.8.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

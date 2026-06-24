@@ -1,0 +1,118 @@
+service: lessonloop-etl-api
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  stage: ${opt:stage, 'local'}
+  region: ${env:AWS_REGION, 'us-east-1'}
+  memorySize: 256
+  timeout: 30
+  environment:
+    STAGE: ${self:provider.stage}
+    TABLE_NAME: ${self:custom.tableName}
+    DYNAMODB_ENDPOINT: ${env:DYNAMODB_ENDPOINT, ''}
+    BEDROCK_STUB: ${env:BEDROCK_STUB, 'true'}
+    OPENSEARCH_STUB: ${env:OPENSEARCH_STUB, 'true'}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:BatchWriteItem
+          Resource:
+            - Fn::GetAtt: [LessonLoopTable, Arn]
+            - Fn::Join:
+                - '/'
+                - - Fn::GetAtt: [LessonLoopTable, Arn]
+                  - 'index/*'
+
+custom:
+  tableName: LessonLoop-${self:provider.stage}
+  serverless-offline:
+    httpPort: 3001
+    lambdaPort: 3002
+
+functions:
+  health:
+    handler: src/handlers/health.handler
+    events:
+      - http:
+          path: health
+          method: get
+          cors: true
+
+  createSurveySession:
+    handler: src/handlers/createSurveySession.handler
+    events:
+      - http:
+          path: surveys/sessions
+          method: post
+          cors: true
+
+  getSurveySession:
+    handler: src/handlers/getSurveySession.handler
+    events:
+      - http:
+          path: surveys/sessions/{sessionId}
+          method: get
+          cors: true
+
+  submitSurveyResponses:
+    handler: src/handlers/submitSurveyResponses.handler
+    events:
+      - http:
+          path: surveys/sessions/{sessionId}/responses
+          method: post
+          cors: true
+
+  completeSurvey:
+    handler: src/handlers/completeSurvey.handler
+    events:
+      - http:
+          path: surveys/sessions/{sessionId}/complete
+          method: post
+          cors: true
+
+  getReport:
+    handler: src/handlers/getReport.handler
+    events:
+      - http:
+          path: reports/{sessionId}
+          method: get
+          cors: true
+
+  getRecommendations:
+    handler: src/handlers/getRecommendations.handler
+    events:
+      - http:
+          path: reports/{sessionId}/recommendations
+          method: get
+          cors: true
+
+resources:
+  Resources:
+    LessonLoopTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.tableName}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: PK
+            AttributeType: S
+          - AttributeName: SK
+            AttributeType: S
+        KeySchema:
+          - AttributeName: PK
+            KeyType: HASH
+          - AttributeName: SK
+            KeyType: RANGE
+
+plugins:
+  - serverless-offline

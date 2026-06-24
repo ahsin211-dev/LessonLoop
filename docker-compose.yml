@@ -1,0 +1,41 @@
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:2.5.2
+    container_name: lessonloop-dynamodb
+    ports:
+      - "8000:8000"
+    command: "-jar DynamoDBLocal.jar -sharedDb -inMemory"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000 || exit 0"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  etl-api:
+    build: ./etl-api
+    container_name: lessonloop-etl-api
+    ports:
+      - "3001:3001"
+    environment:
+      TABLE_NAME: LessonLoop-local
+      DYNAMODB_ENDPOINT: http://dynamodb:8000
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+      BEDROCK_STUB: "true"
+      OPENSEARCH_STUB: "true"
+      STAGE: local
+    depends_on:
+      dynamodb:
+        condition: service_started
+
+  website:
+    build: ./website
+    container_name: lessonloop-website
+    ports:
+      - "3000:3000"
+    environment:
+      NUXT_PUBLIC_API_BASE: http://localhost:3001/local
+      HOST: 0.0.0.0
+    depends_on:
+      - etl-api

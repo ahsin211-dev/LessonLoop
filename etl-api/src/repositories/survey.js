@@ -33,6 +33,8 @@ async function createSession(session) {
   const item = {
     ...KEYS.session(session.sessionId),
     entityType: 'SurveySession',
+    GSI1PK: `TEACHER#${session.teacherId}`,
+    GSI1SK: `SESSION#${session.createdAt}`,
     ...session,
   };
   await docClient.send(new PutCommand({
@@ -49,6 +51,18 @@ async function getSession(sessionId) {
     Key: KEYS.session(sessionId),
   }));
   return result.Item || null;
+}
+
+async function listSessionsForTeacher(teacherId, limit = 20) {
+  const result = await docClient.send(new QueryCommand({
+    TableName: TABLE_NAME,
+    IndexName: 'GSI1',
+    KeyConditionExpression: 'GSI1PK = :pk',
+    ExpressionAttributeValues: { ':pk': `TEACHER#${teacherId}` },
+    ScanIndexForward: false,
+    Limit: limit,
+  }));
+  return (result.Items || []).filter((i) => i.entityType === 'SurveySession');
 }
 
 async function saveResponse(sessionId, response) {
@@ -72,6 +86,21 @@ async function listResponses(sessionId) {
     },
   }));
   return result.Items || [];
+}
+
+async function respondentExists(sessionId, respondentId) {
+  const responses = await listResponses(sessionId);
+  return responses.some((r) => r.respondentId === respondentId);
+}
+
+async function getParticipationStats(sessionId) {
+  const responses = await listResponses(sessionId);
+  const respondentIds = new Set(responses.map((r) => r.respondentId).filter(Boolean));
+  return {
+    studentCount: respondentIds.size,
+    responseCount: responses.length,
+    respondentIds: [...respondentIds],
+  };
 }
 
 async function saveReport(sessionId, report) {
@@ -110,8 +139,11 @@ module.exports = {
   TABLE_NAME,
   createSession,
   getSession,
+  listSessionsForTeacher,
   saveResponse,
   listResponses,
+  respondentExists,
+  getParticipationStats,
   saveReport,
   getReport,
   markSessionComplete,

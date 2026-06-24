@@ -15,6 +15,10 @@ provider:
     DYNAMODB_ENDPOINT: ${env:DYNAMODB_ENDPOINT, ''}
     BEDROCK_STUB: ${env:BEDROCK_STUB, 'true'}
     OPENSEARCH_STUB: ${env:OPENSEARCH_STUB, 'true'}
+    OPENSEARCH_ENDPOINT: ${env:OPENSEARCH_ENDPOINT, ''}
+    BEDROCK_MODEL_ID: ${env:BEDROCK_MODEL_ID, 'anthropic.claude-3-5-sonnet-20241022-v2:0'}
+    JWT_SECRET: ${env:JWT_SECRET, 'lessonloop-dev-secret-change-in-production'}
+    AUTH_DEV_MODE: ${env:AUTH_DEV_MODE, 'true'}
   iam:
     role:
       statements:
@@ -32,6 +36,15 @@ provider:
                 - '/'
                 - - Fn::GetAtt: [LessonLoopTable, Arn]
                   - 'index/*'
+        - Effect: Allow
+          Action:
+            - bedrock:InvokeModel
+          Resource: '*'
+        - Effect: Allow
+          Action:
+            - es:ESHttpGet
+            - es:ESHttpPost
+          Resource: '*'
 
 custom:
   tableName: LessonLoop-${self:provider.stage}
@@ -48,6 +61,22 @@ functions:
           method: get
           cors: true
 
+  login:
+    handler: src/handlers/login.handler
+    events:
+      - http:
+          path: auth/login
+          method: post
+          cors: true
+
+  me:
+    handler: src/handlers/me.handler
+    events:
+      - http:
+          path: auth/me
+          method: get
+          cors: true
+
   createSurveySession:
     handler: src/handlers/createSurveySession.handler
     events:
@@ -56,11 +85,27 @@ functions:
           method: post
           cors: true
 
+  listSessions:
+    handler: src/handlers/listSessions.handler
+    events:
+      - http:
+          path: surveys/sessions
+          method: get
+          cors: true
+
   getSurveySession:
     handler: src/handlers/getSurveySession.handler
     events:
       - http:
           path: surveys/sessions/{sessionId}
+          method: get
+          cors: true
+
+  getSessionStatus:
+    handler: src/handlers/getSessionStatus.handler
+    events:
+      - http:
+          path: surveys/sessions/{sessionId}/status
           method: get
           cors: true
 
@@ -108,11 +153,24 @@ resources:
             AttributeType: S
           - AttributeName: SK
             AttributeType: S
+          - AttributeName: GSI1PK
+            AttributeType: S
+          - AttributeName: GSI1SK
+            AttributeType: S
         KeySchema:
           - AttributeName: PK
             KeyType: HASH
           - AttributeName: SK
             KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: GSI1
+            KeySchema:
+              - AttributeName: GSI1PK
+                KeyType: HASH
+              - AttributeName: GSI1SK
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
 
 plugins:
   - serverless-offline

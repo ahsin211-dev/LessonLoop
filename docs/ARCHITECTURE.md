@@ -3,72 +3,82 @@
 ## System Overview
 
 ```
-┌─────────────┐     HTTP      ┌──────────────────┐     ┌─────────────────┐
-│   website   │ ────────────► │    etl-api       │ ──► │ DynamoDB Local  │
-│  Nuxt/Vue   │               │ Serverless/Node  │     │  (production:   │
-│  PrimeVue   │ ◄──────────── │                  │     │   DynamoDB)     │
-└─────────────┘               └────────┬─────────┘     └─────────────────┘
-                                       │
-                              ┌────────┴─────────┐
-                              │  TEK-Base stub   │
-                              │  Bedrock stub    │
-                              │  OpenSearch stub │
+┌─────────────┐     HTTP+JWT  ┌──────────────────┐     ┌─────────────────┐
+│   website   │ ────────────► │    etl-api       │ ──► │ DynamoDB        │
+│  Nuxt/Vue   │               │ Serverless/Node  │     │  (GSI1: teacher)│
+│  PrimeVue   │ ◄──────────── │                  │     └─────────────────┘
+└─────────────┘               └────────┬─────────┘
+       │                               │
+  /login (teacher)            ┌────────┴─────────┐
+  /survey (anonymous)         │  OpenSearch RBIS │
+                              │  AWS Bedrock     │
                               └──────────────────┘
 ```
 
-## API Endpoints
+## Authentication
 
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| GET | `/health` | `health.js` | Health check |
-| POST | `/surveys/sessions` | `createSurveySession.js` | Create survey session |
-| GET | `/surveys/sessions/{sessionId}` | `getSurveySession.js` | Get session for student |
-| POST | `/surveys/sessions/{sessionId}/responses` | `submitSurveyResponses.js` | Submit Likert answers |
-| POST | `/surveys/sessions/{sessionId}/complete` | `completeSurvey.js` | Score and generate report |
-| GET | `/reports/{sessionId}` | `getReport.js` | Get engagement report |
-| GET | `/reports/{sessionId}/recommendations` | `getRecommendations.js` | TEK-Base strategies |
+| Route type | Auth | Mechanism |
+|------------|------|-----------|
+| Teacher dashboard, reports, complete | Required | `Authorization: Bearer <JWT>` |
+| Student survey submit | None | Anonymous `respondentId` UUID |
+| Health, login | None | — |
 
-## DynamoDB Single-Table Design
+Dev login: `POST /auth/login` with `{ teacherId }` → JWT (24h).
+
+Production path: replace dev login with Cognito/OIDC; verify tokens in `src/lib/auth.js`.
+
+## Multi-Student Scoring
+
+1. Each student device generates a `respondentId` (UUID in sessionStorage)
+2. One submission batch per `respondentId` per session
+3. Scoring groups responses by `respondentId`:
+   - Per student: mean effective score per category
+   - Per category: mean across students
+   - Overall: mean of category scores
+
+File: `etl-api/src/services/scoring.js` → `computeEngagementScores()`
+
+## Question Bank
+
+- 27 questions in `etl-api/src/constants/questions.js` (3 per category)
+- `pickQuestionsForCategories(keys, { questionsPerCategory, seed })`
+- Random selection without replacement within each category
+
+## DynamoDB Schema
 
 Table: `LessonLoop-{stage}`
 
-| PK | SK | Entity |
-|----|-----|--------|
-| `SESSION#{sessionId}` | `METADATA` | SurveySession |
-| `SESSION#{sessionId}` | `RESPONSE#{responseId}` | SurveyResponse |
-| `SESSION#{sessionId}` | `REPORT` | EngagementReport |
+| PK | SK | GSI1PK | GSI1SK | Entity |
+|----|-----|--------|--------|--------|
+| `SESSION#{id}` | `METADATA` | `TEACHER#{teacherId}` | `SESSION#{createdAt}` | SurveySession |
+| `SESSION#{id}` | `RESPONSE#{responseId}` | — | — | SurveyResponse |
+| `SESSION#{id}` | `REPORT` | — | — | EngagementReport |
 
-## Scoring Logic
+GSI1 enables `listSessionsForTeacher()`.
 
-**File:** `etl-api/src/services/scoring.js`
+## AI Integration
 
-1. Each answer is a Likert integer 1–5 (Strongly Disagree → Strongly Agree)
-2. Reverse-scored items (e.g. `mitigating_factors`) flip: `effective = 6 - raw`
-3. Per-subscale score = mean of effective values for that category
-4. Overall score = mean of all selected subscale scores
-5. Percent = `(score - 1) / 4 * 100`
+### OpenSearch (`src/services/opensearch.js`)
+- Index: `rbis-strategies`
+- Stub: returns `src/constants/rbis.js` static map
+- Production: set `OPENSEARCH_STUB=false` + `OPENSEARCH_ENDPOINT`
 
-## Frontend Pages
+### Bedrock (`src/services/bedrock.js`)
+- Model: `BEDROCK_MODEL_ID` (default Claude 3.5 Sonnet)
+- Stub: templated markdown activity
+- Production: set `BEDROCK_STUB=false`
 
-| Route | Component | Purpose |
-|-------|-----------|---------|
-| `/` | `pages/index.vue` | Teacher dashboard — create survey |
-| `/survey/[sessionId]` | `pages/survey/[sessionId].vue` | Anonymous student survey |
-| `/reports/[sessionId]` | `pages/reports/[sessionId].vue` | Engagement report + recommendations |
+### TEK-Base (`src/services/recommendations.js`)
+- Finds subscales below threshold (default 3.5)
+- Retrieves RBIS via OpenSearch
+- Generates customized activity via Bedrock
 
-## Environment Variables
+## Frontend Routes
 
-### etl-api
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `TABLE_NAME` | `LessonLoop-local` | DynamoDB table |
-| `DYNAMODB_ENDPOINT` | — | Local endpoint (e.g. `http://localhost:8000`) |
-| `BEDROCK_STUB` | `true` | Use local recommendation stub |
-| `OPENSEARCH_STUB` | `true` | Use local RBIS stub |
-
-### website
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NUXT_PUBLIC_API_BASE` | `http://localhost:3001/local` | API base URL |
+| Route | Auth | Purpose |
+|-------|------|---------|
+| `/login` | — | Teacher dev sign-in |
+| `/` | Teacher | Dashboard + session list |
+| `/sessions/{id}` | Teacher | Monitor participation, close session |
+| `/survey/{id}` | — | Anonymous student survey |
+| `/reports/{id}` | Teacher | Engagement report + recommendations |

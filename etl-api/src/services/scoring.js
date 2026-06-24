@@ -1,10 +1,6 @@
 const { SUBSCALE_BY_KEY, SCORE_MIN, SCORE_MAX } = require('../constants/subscales');
 const { QUESTION_BY_ID } = require('../constants/questions');
 
-/**
- * Apply reverse scoring for negatively framed items (e.g. mitigating factors).
- * Raw Likert 1–5 becomes effective score where higher = better engagement.
- */
 function effectiveScore(rawValue, reverseScored) {
   if (reverseScored) {
     return SCORE_MAX + SCORE_MIN - rawValue;
@@ -12,9 +8,6 @@ function effectiveScore(rawValue, reverseScored) {
   return rawValue;
 }
 
-/**
- * Validate a single Likert response value.
- */
 function validateAnswerValue(value) {
   const num = Number(value);
   if (!Number.isInteger(num) || num < SCORE_MIN || num > SCORE_MAX) {
@@ -23,14 +16,15 @@ function validateAnswerValue(value) {
   return { valid: true, value: num };
 }
 
+function mean(values) {
+  if (!values.length) return null;
+  return round2(values.reduce((a, b) => a + b, 0) / values.length);
+}
+
 /**
- * Aggregate raw responses into per-question, per-subscale, and overall scores.
- *
- * @param {Array<{questionId: string, categoryKey: string, answerValue: number}>} responses
- * @param {string[]} selectedCategories - categories included in this survey session
- * @returns {object} Scored report payload
+ * Score a single student's responses.
  */
-function computeEngagementScores(responses, selectedCategories) {
+function scoreStudentResponses(responses) {
   const byCategory = {};
   const questionScores = [];
 
@@ -51,21 +45,63 @@ function computeEngagementScores(responses, selectedCategories) {
       rawValue: raw,
       effectiveValue: scored,
       reverseScored,
+      respondentId: resp.respondentId,
     });
 
-    if (!byCategory[resp.categoryKey]) {
-      byCategory[resp.categoryKey] = [];
-    }
+    if (!byCategory[resp.categoryKey]) byCategory[resp.categoryKey] = [];
     byCategory[resp.categoryKey].push(scored);
   }
 
+  const categoryMeans = {};
+  for (const [key, values] of Object.entries(byCategory)) {
+    categoryMeans[key] = mean(values);
+  }
+
+  return { byCategory, categoryMeans, questionScores };
+}
+
+/**
+ * Aggregate responses from multiple anonymous students into subscale and overall scores.
+ * Per-student category means are computed first, then averaged across students.
+ */
+function computeEngagementScores(responses, selectedCategories) {
+  const byRespondent = {};
+  for (const resp of responses) {
+    const rid = resp.respondentId || 'legacy-anonymous';
+    if (!byRespondent[rid]) byRespondent[rid] = [];
+    byRespondent[rid].push(resp);
+  }
+
+  const studentCount = Object.keys(byRespondent).length;
+  const studentScores = Object.entries(byRespondent).map(([respondentId, studentResponses]) => ({
+    respondentId,
+    ...scoreStudentResponses(studentResponses),
+  }));
+
+  const allQuestionScores = studentScores.flatMap((s) => s.questionScores);
+
   const subscaleScores = selectedCategories.map((categoryKey) => {
-    const values = byCategory[categoryKey] || [];
     const subscale = SUBSCALE_BY_KEY[categoryKey];
-    const score = values.length
-      ? round2(values.reduce((a, b) => a + b, 0) / values.length)
-      : null;
+    const studentCategoryMeans = studentScores
+      .map((s) => s.categoryMeans[categoryKey])
+      .filter((v) => v != null);
+
+    const score = mean(studentCategoryMeans);
     const percent = score !== null ? round2(((score - SCORE_MIN) / (SCORE_MAX - SCORE_MIN)) * 100) : null;
+
+    const questionIds = [...new Set(
+      allQuestionScores.filter((q) => q.categoryKey === categoryKey).map((q) => q.questionId),
+    )];
+
+    const questionBreakdown = questionIds.map((questionId) => {
+      const qScores = allQuestionScores.filter((q) => q.questionId === questionId);
+      return {
+        questionId,
+        categoryKey,
+        meanScore: mean(qScores.map((q) => q.effectiveValue)),
+        responseCount: qScores.length,
+      };
+    });
 
     return {
       categoryKey,
@@ -73,14 +109,15 @@ function computeEngagementScores(responses, selectedCategories) {
       group: subscale?.group ?? 'unknown',
       score,
       percent,
-      responseCount: values.length,
-      questionScores: questionScores.filter((q) => q.categoryKey === categoryKey),
+      studentCount: studentCategoryMeans.length,
+      responseCount: allQuestionScores.filter((q) => q.categoryKey === categoryKey).length,
+      questionBreakdown,
     };
   });
 
   const scoredSubscales = subscaleScores.filter((s) => s.score !== null);
   const overallScore = scoredSubscales.length
-    ? round2(scoredSubscales.reduce((a, b) => a + b.score, 0) / scoredSubscales.length)
+    ? mean(scoredSubscales.map((s) => s.score))
     : null;
   const overallPercent = overallScore !== null
     ? round2(((overallScore - SCORE_MIN) / (SCORE_MAX - SCORE_MIN)) * 100)
@@ -90,7 +127,9 @@ function computeEngagementScores(responses, selectedCategories) {
     overallScore,
     overallPercent,
     subscaleScores,
+    studentCount,
     totalResponses: responses.length,
+    responseCount: responses.length,
     scoredAt: new Date().toISOString(),
   };
 }
@@ -102,5 +141,7 @@ function round2(n) {
 module.exports = {
   effectiveScore,
   validateAnswerValue,
+  scoreStudentResponses,
   computeEngagementScores,
+  mean,
 };

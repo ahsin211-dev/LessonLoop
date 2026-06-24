@@ -24,6 +24,8 @@ services:
       AWS_SECRET_ACCESS_KEY: local
       BEDROCK_STUB: "true"
       OPENSEARCH_STUB: "true"
+      AUTH_DEV_MODE: "true"
+      JWT_SECRET: lessonloop-dev-secret-change-in-production
       STAGE: local
     depends_on:
       dynamodb:

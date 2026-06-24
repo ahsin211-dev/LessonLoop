@@ -6,7 +6,12 @@
         LessonLoop
       </NuxtLink>
       <nav>
-        <NuxtLink to="/">Dashboard</NuxtLink>
+        <template v-if="isAuthenticated">
+          <NuxtLink to="/">Dashboard</NuxtLink>
+          <span class="user-name">{{ teacher?.name }}</span>
+          <Button label="Sign Out" text size="small" @click="logout" />
+        </template>
+        <NuxtLink v-else to="/login">Sign In</NuxtLink>
       </nav>
     </header>
     <main>
@@ -17,6 +22,15 @@
     </footer>
   </div>
 </template>
+
+<script setup lang="ts">
+const { isAuthenticated, teacher, clearAuth } = useAuth()
+
+function logout() {
+  clearAuth()
+  navigateTo('/login')
+}
+</script>
 
 <style scoped>
 .app-shell {
@@ -49,8 +63,13 @@
   color: var(--ll-primary);
 }
 
+nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
 nav a {
-  margin-left: 1rem;
   color: var(--ll-muted);
   font-weight: 500;
 }
@@ -59,9 +78,12 @@ nav a.router-link-active {
   color: var(--ll-primary);
 }
 
-main {
-  flex: 1;
+.user-name {
+  font-size: 0.875rem;
+  color: var(--ll-muted);
 }
+
+main { flex: 1; }
 
 .app-footer {
   padding: 1rem 1.5rem;

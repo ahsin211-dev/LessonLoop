@@ -4,13 +4,13 @@ export interface SubscaleScore {
   group: string
   score: number | null
   percent: number | null
+  studentCount: number
   responseCount: number
-  questionScores: Array<{
+  questionBreakdown: Array<{
     questionId: string
     categoryKey: string
-    rawValue: number
-    effectiveValue: number
-    reverseScored: boolean
+    meanScore: number | null
+    responseCount: number
   }>
 }
 
@@ -21,6 +21,7 @@ export interface EngagementReport {
   overallScore: number
   overallPercent: number
   subscaleScores: SubscaleScore[]
+  studentCount: number
   responseCount: number
   scoredAt: string
   createdAt: string
@@ -38,9 +39,28 @@ export interface SurveySession {
   lessonId: string
   lessonTitle: string
   selectedCategories: string[]
+  questionsPerCategory?: number
   questions: SurveyQuestion[]
   status: string
   createdAt?: string
+  participation?: {
+    studentCount: number
+    responseCount: number
+  }
+}
+
+export interface TeacherSession {
+  sessionId: string
+  lessonId: string
+  lessonTitle: string
+  status: string
+  selectedCategories: string[]
+  questionsPerCategory?: number
+  questionCount?: number
+  createdAt: string
+  completedAt?: string
+  surveyUrl: string
+  reportUrl: string
 }
 
 export interface Recommendation {
@@ -54,6 +74,16 @@ export interface Recommendation {
     steps: string[]
     citations: string[]
   }
+  activity?: string
+  aiGenerated?: boolean
+  aiModel?: string
+  source?: string
+}
+
+export interface Teacher {
+  teacherId: string
+  email: string
+  name: string
 }
 
 export const LIKERT_OPTIONS = [
@@ -68,3 +98,15 @@ export const SUBSCALE_GROUPS: Record<string, string> = {
   learner_experience: 'Learner Experience',
   instructional_design: 'Instructional Design',
 }
+
+export const ALL_SUBSCALES = [
+  { key: 'cognitive', label: 'Cognitive' },
+  { key: 'social', label: 'Social' },
+  { key: 'emotional', label: 'Emotional' },
+  { key: 'self_regulation', label: 'Self-Regulation' },
+  { key: 'student_agency', label: 'Student Agency' },
+  { key: 'mitigating_factors', label: 'Mitigating Factors' },
+  { key: 'lesson_design', label: 'Lesson Design' },
+  { key: 'content_accessibility', label: 'Content Accessibility' },
+  { key: 'technology_use', label: 'Technology Use' },
+]

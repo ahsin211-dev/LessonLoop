@@ -2,6 +2,8 @@
 import type { EngagementReport, Recommendation } from '~/types/survey'
 import { SUBSCALE_GROUPS } from '~/types/survey'
 
+definePageMeta({ middleware: 'auth' })
+
 const route = useRoute()
 const api = useLessonLoopApi()
 const sessionId = route.params.sessionId as string
@@ -68,7 +70,8 @@ onMounted(async () => {
               <ProgressBar :value="report.overallPercent" :show-value="true" class="mt-2" />
             </div>
             <div class="meta-stats">
-              <div><strong>{{ report.responseCount }}</strong> responses</div>
+              <div><strong>{{ report.studentCount }}</strong> students responded</div>
+              <div class="text-muted">{{ report.responseCount }} total answers</div>
               <div class="text-muted">Scored {{ new Date(report.scoredAt).toLocaleString() }}</div>
             </div>
           </div>
@@ -87,7 +90,7 @@ onMounted(async () => {
                 <Tag :value="sub.score?.toFixed(1) ?? '—'" :severity="scoreColor(sub.score)" />
               </div>
               <ProgressBar :value="scorePercent(sub.score)" :show-value="false" class="mt-2" />
-              <small class="text-muted">{{ sub.responseCount }} response(s)</small>
+              <small class="text-muted">{{ sub.studentCount }} student(s), {{ sub.responseCount }} answer(s)</small>
             </template>
           </Card>
         </div>
@@ -105,14 +108,19 @@ onMounted(async () => {
           <div class="rec-title">
             {{ rec.strategy.title }}
             <Tag :value="rec.priority" :severity="rec.priority === 'high' ? 'danger' : 'warn'" />
+            <Tag v-if="rec.aiGenerated" value="AI" severity="info" />
           </div>
         </template>
-        <template #subtitle>{{ rec.displayName }} — current score {{ rec.currentScore }}</template>
+        <template #subtitle>{{ rec.displayName }} — score {{ rec.currentScore }}</template>
         <template #content>
           <p><strong>Goal:</strong> {{ rec.strategy.goal }}</p>
           <ol class="steps-list">
             <li v-for="(step, i) in rec.strategy.steps" :key="i">{{ step }}</li>
           </ol>
+          <div v-if="rec.activity" class="activity-block">
+            <h4>Suggested Activity</h4>
+            <pre class="activity-text">{{ rec.activity }}</pre>
+          </div>
         </template>
       </Card>
     </template>
@@ -121,87 +129,38 @@ onMounted(async () => {
 
 <style scoped>
 .back-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  font-size: 0.875rem;
-  margin-bottom: 0.75rem;
+  display: inline-flex; align-items: center; gap: 0.375rem;
+  font-size: 0.875rem; margin-bottom: 0.75rem;
 }
-
-.overall-grid {
-  display: grid;
-  gap: 1.5rem;
-}
-
+.overall-grid { display: grid; gap: 1.5rem; }
 @media (min-width: 640px) {
-  .overall-grid {
-    grid-template-columns: 1fr 1fr;
-    align-items: center;
-  }
+  .overall-grid { grid-template-columns: 1fr 1fr; align-items: center; }
 }
-
 .overall-score .score-label {
-  display: block;
-  font-size: 0.875rem;
-  color: var(--ll-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  display: block; font-size: 0.875rem; color: var(--ll-muted);
+  text-transform: uppercase; letter-spacing: 0.05em;
 }
-
 .overall-score .score-value {
-  font-size: 3rem;
-  font-weight: 700;
-  color: var(--ll-primary);
-  line-height: 1.1;
+  font-size: 3rem; font-weight: 700; color: var(--ll-primary); line-height: 1.1;
 }
-
-.overall-score .score-range {
-  font-size: 0.875rem;
-  color: var(--ll-muted);
-}
-
-.section-title {
-  font-size: 1.25rem;
-  margin: 0 0 1rem;
-}
-
+.overall-score .score-range { font-size: 0.875rem; color: var(--ll-muted); }
+.section-title { font-size: 1.25rem; margin: 0 0 1rem; }
 .group-title {
-  font-size: 1rem;
-  color: var(--ll-muted);
-  margin: 0 0 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-size: 1rem; color: var(--ll-muted); margin: 0 0 0.75rem;
+  text-transform: uppercase; letter-spacing: 0.04em;
 }
-
-.group-section {
-  margin-bottom: 1.5rem;
+.group-section { margin-bottom: 1.5rem; }
+.subscale-header { display: flex; justify-content: space-between; align-items: center; }
+.subscale-name { font-weight: 600; }
+.rec-title { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.steps-list { margin: 0.5rem 0 0; padding-left: 1.25rem; }
+.activity-block { margin-top: 1rem; padding: 1rem; background: #f8fafc; border-radius: 8px; }
+.activity-block h4 { margin: 0 0 0.5rem; font-size: 0.9rem; }
+.activity-text {
+  white-space: pre-wrap; font-family: inherit; font-size: 0.875rem;
+  margin: 0; line-height: 1.5;
 }
-
-.subscale-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.subscale-name {
-  font-weight: 600;
-}
-
-.rec-title {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.steps-list {
-  margin: 0.5rem 0 0;
-  padding-left: 1.25rem;
-}
-
-.text-muted {
-  color: var(--ll-muted);
-}
-
+.text-muted { color: var(--ll-muted); }
 .mb-3 { margin-bottom: 0.75rem; }
 .mb-4 { margin-bottom: 1rem; }
 .mt-2 { margin-top: 0.5rem; }

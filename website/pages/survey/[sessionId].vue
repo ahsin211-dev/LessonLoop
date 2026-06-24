@@ -4,6 +4,7 @@ import type { SurveySession } from '~/types/survey'
 
 const route = useRoute()
 const api = useLessonLoopApi()
+const { getRespondentIdForSession } = useRespondentId()
 const sessionId = route.params.sessionId as string
 
 const session = ref<SurveySession | null>(null)
@@ -12,10 +13,15 @@ const loading = ref(true)
 const submitting = ref(false)
 const error = ref('')
 const submitted = ref(false)
+const participation = ref<{ studentCount: number } | null>(null)
 
 onMounted(async () => {
   try {
     session.value = await api.getSurveySession(sessionId)
+    if (session.value.status === 'completed') {
+      error.value = 'This survey is closed.'
+      return
+    }
     for (const q of session.value.questions) {
       answers.value[q.id] = 3
     }
@@ -31,12 +37,13 @@ async function submitSurvey() {
   submitting.value = true
   error.value = ''
   try {
+    const respondentId = getRespondentIdForSession(sessionId)
     const responses = session.value.questions.map((q) => ({
       questionId: q.id,
       answerValue: answers.value[q.id],
     }))
-    await api.submitResponses(sessionId, responses)
-    await api.completeSurvey(sessionId)
+    const result = await api.submitResponses(sessionId, respondentId, responses)
+    participation.value = result.participation
     submitted.value = true
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : 'Failed to submit survey'
@@ -63,9 +70,9 @@ async function submitSurvey() {
             <i class="pi pi-check-circle success-icon" />
             <h2>Thank you!</h2>
             <p>Your feedback helps your teacher improve the next lesson.</p>
-            <NuxtLink :to="`/reports/${sessionId}`">
-              <Button label="View Sample Report (Teacher)" icon="pi pi-chart-bar" outlined />
-            </NuxtLink>
+            <p v-if="participation" class="text-muted">
+              {{ participation.studentCount }} student(s) have responded so far.
+            </p>
           </div>
         </template>
       </Card>
@@ -116,63 +123,23 @@ async function submitSurvey() {
 </template>
 
 <style scoped>
-.question-card {
-  margin-bottom: 1rem;
-}
-
-.question-meta {
-  margin-bottom: 0.5rem;
-}
-
-.question-text {
-  font-size: 1.05rem;
-  line-height: 1.5;
-  margin: 0 0 1rem;
-}
-
-.likert-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
+.question-card { margin-bottom: 1rem; }
+.question-meta { margin-bottom: 0.5rem; }
+.question-text { font-size: 1.05rem; line-height: 1.5; margin: 0 0 1rem; }
+.likert-group { display: flex; flex-direction: column; gap: 0.5rem; }
 .likert-option {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.625rem 0.75rem;
-  border: 1px solid var(--ll-border);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.625rem 0.75rem; border: 1px solid var(--ll-border);
+  border-radius: 8px; cursor: pointer;
 }
-
-.likert-option:hover,
-.likert-option.selected {
-  border-color: var(--ll-primary);
-  background: #eff6ff;
+.likert-option:hover, .likert-option.selected {
+  border-color: var(--ll-primary); background: #eff6ff;
 }
-
-.likert-option label {
-  cursor: pointer;
-  flex: 1;
-}
-
-.submit-btn {
-  width: 100%;
-  margin-top: 0.5rem;
-}
-
-.success-state {
-  text-align: center;
-  padding: 2rem 1rem;
-}
-
-.success-icon {
-  font-size: 3rem;
-  color: var(--ll-success);
-}
-
+.likert-option label { cursor: pointer; flex: 1; }
+.submit-btn { width: 100%; margin-top: 0.5rem; }
+.success-state { text-align: center; padding: 2rem 1rem; }
+.success-icon { font-size: 3rem; color: var(--ll-success); }
 .mb-2 { margin-bottom: 0.5rem; }
 .mb-3 { margin-bottom: 0.75rem; }
+.text-muted { color: var(--ll-muted); }
 </style>

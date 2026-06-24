@@ -1,6 +1,5 @@
 /**
  * Create DynamoDB Local table for development.
- * Run: node scripts/setup-local-tables.js
  */
 const { DynamoDBClient, CreateTableCommand, DescribeTableCommand } = require('@aws-sdk/client-dynamodb');
 
@@ -37,11 +36,21 @@ async function main() {
     AttributeDefinitions: [
       { AttributeName: 'PK', AttributeType: 'S' },
       { AttributeName: 'SK', AttributeType: 'S' },
+      { AttributeName: 'GSI1PK', AttributeType: 'S' },
+      { AttributeName: 'GSI1SK', AttributeType: 'S' },
     ],
     KeySchema: [
       { AttributeName: 'PK', KeyType: 'HASH' },
       { AttributeName: 'SK', KeyType: 'RANGE' },
     ],
+    GlobalSecondaryIndexes: [{
+      IndexName: 'GSI1',
+      KeySchema: [
+        { AttributeName: 'GSI1PK', KeyType: 'HASH' },
+        { AttributeName: 'GSI1SK', KeyType: 'RANGE' },
+      ],
+      Projection: { ProjectionType: 'ALL' },
+    }],
   }));
 
   console.log(`Created table ${TABLE_NAME} at ${ENDPOINT}`);

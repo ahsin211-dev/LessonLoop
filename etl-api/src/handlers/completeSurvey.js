@@ -1,4 +1,6 @@
-const { ok, badRequest, notFound, serverError } = require('../lib/response');
+const { ok, badRequest, notFound } = require('../lib/response');
+const { requireSessionOwner } = require('../lib/auth');
+const { withHandler } = require('../lib/handler');
 const { computeEngagementScores } = require('../services/scoring');
 const {
   getSession,
@@ -8,61 +10,60 @@ const {
   getReport,
 } = require('../repositories/survey');
 
-exports.handler = async (event) => {
-  try {
-    const sessionId = event.pathParameters?.sessionId;
-    if (!sessionId) return notFound('Session not found');
+exports.handler = withHandler(async (event) => {
+  const sessionId = event.pathParameters?.sessionId;
+  if (!sessionId) return notFound('Session not found');
 
-    const session = await getSession(sessionId);
-    if (!session) return notFound('Session not found');
+  const session = await getSession(sessionId);
+  if (!session) return notFound('Session not found');
 
-    const existingReport = await getReport(sessionId);
-    if (existingReport) {
-      return ok({
-        sessionId,
-        status: 'completed',
-        report: formatReport(existingReport),
-        message: 'Report already generated',
-      });
-    }
+  requireSessionOwner(event, session);
 
-    const rawResponses = await listResponses(sessionId);
-    if (rawResponses.length === 0) {
-      return badRequest('No responses submitted for this session');
-    }
-
-    const responses = rawResponses.map((r) => ({
-      questionId: r.questionId,
-      categoryKey: r.categoryKey,
-      answerValue: r.answerValue,
-      reverseScored: r.reverseScored,
-    }));
-
-    const scores = computeEngagementScores(responses, session.selectedCategories);
-
-    const report = {
-      reportId: sessionId,
-      lessonId: session.lessonId,
-      lessonTitle: session.lessonTitle,
-      teacherId: session.teacherId,
-      ...scores,
-      responseCount: rawResponses.length,
-      createdAt: new Date().toISOString(),
-    };
-
-    await saveReport(sessionId, report);
-    await markSessionComplete(sessionId);
-
+  const existingReport = await getReport(sessionId);
+  if (existingReport) {
     return ok({
       sessionId,
       status: 'completed',
-      report: formatReport({ sessionId, ...report }),
+      report: formatReport(existingReport),
+      message: 'Report already generated',
     });
-  } catch (err) {
-    console.error('completeSurvey error', err.message);
-    return serverError(err.message);
   }
-};
+
+  const rawResponses = await listResponses(sessionId);
+  if (rawResponses.length === 0) {
+    return badRequest('No responses submitted for this session');
+  }
+
+  const responses = rawResponses.map((r) => ({
+    questionId: r.questionId,
+    categoryKey: r.categoryKey,
+    answerValue: r.answerValue,
+    reverseScored: r.reverseScored,
+    respondentId: r.respondentId,
+  }));
+
+  const scores = computeEngagementScores(responses, session.selectedCategories);
+
+  const report = {
+    reportId: sessionId,
+    lessonId: session.lessonId,
+    lessonTitle: session.lessonTitle,
+    teacherId: session.teacherId,
+    grade: session.grade,
+    subject: session.subject,
+    ...scores,
+    createdAt: new Date().toISOString(),
+  };
+
+  await saveReport(sessionId, report);
+  await markSessionComplete(sessionId);
+
+  return ok({
+    sessionId,
+    status: 'completed',
+    report: formatReport({ sessionId, ...report }),
+  });
+});
 
 function formatReport(item) {
   return {
@@ -72,6 +73,7 @@ function formatReport(item) {
     overallScore: item.overallScore,
     overallPercent: item.overallPercent,
     subscaleScores: item.subscaleScores,
+    studentCount: item.studentCount,
     responseCount: item.responseCount || item.totalResponses,
     scoredAt: item.scoredAt || item.createdAt,
     createdAt: item.createdAt,

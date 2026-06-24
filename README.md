@@ -13,9 +13,9 @@ AI-powered professional learning platform for Student Engagement Surveys (SES), 
 ## Stack
 
 - **Frontend:** Vue 3, Nuxt 3, PrimeVue
-- **Backend:** Node.js 20, Serverless Framework, serverless-offline
+- **Backend:** Node.js 20, Serverless Framework, JWT auth (dev) / Cognito-ready
 - **Database:** DynamoDB (DynamoDB Local for dev)
-- **AI (stubbed locally):** TEK-Base recommendations, Bedrock/OpenSearch stubs
+- **AI:** TEK-Base recommendations via OpenSearch RBIS + AWS Bedrock (stubbed locally)
 
 ## Quick Start (Docker)
 
@@ -29,6 +29,14 @@ docker compose up --build
 | API | http://localhost:3001/local |
 | DynamoDB Local | http://localhost:8000 |
 
+### First-time flow
+
+1. Open http://localhost:3000/login — sign in as Demo Teacher
+2. Create a survey session (select categories, questions per category)
+3. Copy the survey link from the session monitor page
+4. Open the link in another browser/incognito as a student
+5. Return to dashboard → Close session & generate report
+
 ### Seed demo data
 
 ```bash
@@ -38,8 +46,6 @@ DYNAMODB_ENDPOINT=http://localhost:8000 TABLE_NAME=LessonLoop-local npm run setu
 DYNAMODB_ENDPOINT=http://localhost:8000 TABLE_NAME=LessonLoop-local npm run seed
 ```
 
-Use the printed session ID to open `/reports/{sessionId}`.
-
 ## Quick Start (without Docker)
 
 ### Backend
@@ -47,13 +53,13 @@ Use the printed session ID to open `/reports/{sessionId}`.
 ```bash
 cd etl-api
 npm install
-# Requires DynamoDB Local on port 8000, or use Docker for dynamodb only:
-# docker run -p 8000:8000 amazon/dynamodb-local -jar DynamoDBLocal.jar -sharedDb -inMemory
+# DynamoDB Local on port 8000 required
 
 export DYNAMODB_ENDPOINT=http://localhost:8000
 export TABLE_NAME=LessonLoop-local
 export AWS_ACCESS_KEY_ID=local
 export AWS_SECRET_ACCESS_KEY=local
+export AUTH_DEV_MODE=true
 
 npm run setup:local
 npm start
@@ -67,15 +73,43 @@ npm install
 NUXT_PUBLIC_API_BASE=http://localhost:3001/local npm run dev
 ```
 
-Open http://localhost:3000
+## Features
 
-## Survey → Score Flow
+### Teacher authentication
+- Dev JWT login at `/login` (`POST /auth/login`)
+- Protected routes: dashboard, session monitor, reports
+- Student survey remains anonymous (no login)
 
-1. Teacher creates survey session (`POST /surveys/sessions`)
-2. Students complete anonymous Likert survey (`POST /surveys/sessions/{id}/responses`)
-3. Teacher completes survey (`POST /surveys/sessions/{id}/complete`) → scoring runs
-4. Report displayed (`GET /reports/{id}`) with overall + 9 subscale scores
-5. TEK-Base recommendations (`GET /reports/{id}/recommendations`)
+### Multi-student aggregation
+- Each student device gets a unique `respondentId` (stored in sessionStorage)
+- One submission per device per survey
+- Teacher closes session when ready → scores aggregate per-student then across class
+- Report shows `studentCount` and per-subscale student breakdown
+
+### Expanded question bank
+- 27 questions (3 per subscale category)
+- Random selection with configurable `questionsPerCategory` (1–3)
+- Optional `seed` for reproducible question sets
+
+### AI recommendations (TEK-Base)
+- OpenSearch RBIS retrieval (`OPENSEARCH_STUB=false` + endpoint for production)
+- Bedrock activity generation (`BEDROCK_STUB=false` for production Claude)
+- Local stubs return static strategies + templated activities
+
+## API Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/auth/login` | — | Dev teacher login |
+| GET | `/auth/me` | Teacher | Current user |
+| POST | `/surveys/sessions` | Teacher | Create survey |
+| GET | `/surveys/sessions` | Teacher | List teacher sessions |
+| GET | `/surveys/sessions/{id}` | — | Get survey (student) |
+| GET | `/surveys/sessions/{id}/status` | Teacher | Participation stats |
+| POST | `/surveys/sessions/{id}/responses` | — | Submit answers |
+| POST | `/surveys/sessions/{id}/complete` | Teacher | Score & close |
+| GET | `/reports/{id}` | Teacher | Engagement report |
+| GET | `/reports/{id}/recommendations` | Teacher | TEK-Base strategies |
 
 ## Nine SES Subscales
 
@@ -91,21 +125,33 @@ Open http://localhost:3000
 | `content_accessibility` | Content Accessibility | Instructional Design |
 | `technology_use` | Technology Use | Instructional Design |
 
-Scoring logic: `etl-api/src/services/scoring.js`
+Scoring: `etl-api/src/services/scoring.js`
 
 ## Tests
 
 ```bash
-cd etl-api && npm test
+cd etl-api && npm test   # 9 tests
 ```
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JWT_SECRET` | dev secret | JWT signing key |
+| `AUTH_DEV_MODE` | `true` | Enable dev login |
+| `BEDROCK_STUB` | `true` | Use local AI stub |
+| `OPENSEARCH_STUB` | `true` | Use local RBIS stub |
+| `OPENSEARCH_ENDPOINT` | — | OpenSearch URL (production) |
+| `BEDROCK_MODEL_ID` | Claude 3.5 Sonnet | Bedrock model |
 
 ## Privacy
 
 - Student surveys are anonymous (no student IDs stored)
+- `respondentId` is a random UUID per device — not linked to identity
+- Teacher routes require authentication
 - Local development uses scrubbed demo data only
-- Do not enable debug logging of response content in production
 
 ## Documentation
 
-- [Phase 1 Codebase Review](docs/PHASE1_CODEBASE_REVIEW.md)
 - [Architecture & Scoring Guide](docs/ARCHITECTURE.md)
+- [Phase 1 Codebase Review](docs/PHASE1_CODEBASE_REVIEW.md)

@@ -2,15 +2,25 @@ const { v4: uuidv4 } = require('uuid');
 const { ok, badRequest, notFound, serverError, parseBody } = require('../lib/response');
 const { validateAnswerValue } = require('../services/scoring');
 const { QUESTION_BY_ID } = require('../constants/questions');
-const { getSession, saveResponse } = require('../repositories/survey');
+const {
+  getSession,
+  saveResponse,
+  respondentExists,
+  getParticipationStats,
+} = require('../repositories/survey');
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 exports.handler = async (event) => {
   try {
     const sessionId = event.pathParameters?.sessionId;
     const body = parseBody(event);
-    const { responses } = body;
+    const { responses, respondentId } = body;
 
     if (!sessionId) return notFound('Session not found');
+    if (!respondentId || !UUID_RE.test(respondentId)) {
+      return badRequest('respondentId (UUID) is required for anonymous student tracking');
+    }
     if (!Array.isArray(responses) || responses.length === 0) {
       return badRequest('responses array is required');
     }
@@ -21,15 +31,21 @@ exports.handler = async (event) => {
       return badRequest('Survey session is already completed');
     }
 
+    if (await respondentExists(sessionId, respondentId)) {
+      return badRequest('This device has already submitted a response for this survey');
+    }
+
+    const batchId = uuidv4();
     const saved = [];
+
     for (const resp of responses) {
       const { questionId, answerValue } = resp;
       const question = QUESTION_BY_ID[questionId];
       if (!question) {
         return badRequest(`Unknown questionId: ${questionId}`);
       }
-      if (!session.selectedCategories.includes(question.categoryKey)) {
-        return badRequest(`Category ${question.categoryKey} not in this session`);
+      if (!session.questions.some((q) => q.id === questionId)) {
+        return badRequest(`Question ${questionId} is not part of this survey session`);
       }
 
       const validation = validateAnswerValue(answerValue);
@@ -40,6 +56,8 @@ exports.handler = async (event) => {
       const responseId = uuidv4();
       const record = {
         responseId,
+        batchId,
+        respondentId,
         questionId,
         categoryKey: question.categoryKey,
         answerValue: validation.value,
@@ -50,7 +68,15 @@ exports.handler = async (event) => {
       saved.push(record);
     }
 
-    return ok({ sessionId, savedCount: saved.length, responses: saved });
+    const participation = await getParticipationStats(sessionId);
+
+    return ok({
+      sessionId,
+      batchId,
+      respondentId,
+      savedCount: saved.length,
+      participation,
+    });
   } catch (err) {
     console.error('submitSurveyResponses error', err.message);
     return serverError(err.message);
